@@ -41,7 +41,7 @@ export function ProfileDialog({ userId, onClose }: { userId: string | null; onCl
   async function addReview() {
     if (!text.trim()) return;
     const { error } = await db.from("reviews").insert({ target_id: userId, author_id: user!.id, rating, content: text.trim() });
-    if (error) return toast.error(error.message);
+    if (error) { toast.error(error.message); return; }
     setText(""); load();
   }
   async function requestDelete(r: Review) {

@@ -12,7 +12,7 @@ export function useSigned(path: string | null | undefined) {
   return url;
 }
 
-export function Avatar({ path, name, className, onClick }: { path?: string | null; name: string; className?: string; onClick?: () => void }) {
+export function Avatar({ path, name, className, onClick }: { path?: string | null | undefined; name: string; className?: string | undefined; onClick?: (() => void) | undefined }) {
   const url = useSigned(path);
   return (
     <button type="button" onClick={onClick} disabled={!onClick}

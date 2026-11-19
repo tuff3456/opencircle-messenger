@@ -1,23 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { AuthProvider, useAuth } from "@/lib/auth";
+import { AuthScreen } from "@/components/app/AuthScreen";
+import { AppShell } from "@/components/app/AppShell";
 
-// The home route ships no og:image, so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
+  ssr: false,
+  head: () => ({
+    meta: [
+      { title: "Javiers History Project — Chat, call & share" },
+      { name: "description", content: "Message friends and groups, make calls with camera and screen share, and share photos, videos, voice notes and files." },
+      { property: "og:title", content: "Javiers History Project" },
+      { property: "og:description", content: "Chat, call and share with friends and groups." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+function Gate() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="min-h-screen grid place-items-center text-muted-foreground">Loading…</div>;
+  return user ? <AppShell /> : <AuthScreen />;
+}
+
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  return <AuthProvider><Gate /></AuthProvider>;
 }

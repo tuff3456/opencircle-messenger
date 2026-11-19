@@ -1,3 +1,4 @@
+import { UserPicker as UserPickerLazy } from "./UserPicker";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -20,7 +21,7 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
 
   async function upload(field: "avatar_url" | "banner_url", f?: File) {
     if (!f) return;
-    if (!f.type.startsWith("image/")) return toast.error("Pick an image.");
+    if (!f.type.startsWith("image/")) { toast.error("Pick an image."); return; }
     const path = await uploadFile(user!.id, f, f.name);
     await db.from("profiles").update({ [field]: path }).eq("id", user!.id);
     refresh();
@@ -70,13 +71,12 @@ export function NewGroupDialog({ open, onClose, onCreated }: { open: boolean; on
         ))}</div>
         <UserPickerLazy exclude={picked.map((p) => p.id)} onPick={(p) => setPicked([...picked, p])} />
         <Button onClick={async () => {
-          if (!name.trim()) return toast.error("Name your group.");
+          if (!name.trim()) { toast.error("Name your group."); return; }
           const { data, error } = await db.rpc("create_group", { _name: name.trim(), _private: priv, _members: picked.map((p) => p.id) });
-          if (error) return toast.error(error.message);
+          if (error) { toast.error(error.message); return; }
           setName(""); setPicked([]); onClose(); onCreated(data);
         }}>Create group</Button>
       </DialogContent>
     </Dialog>
   );
 }
-import { UserPicker as UserPickerLazy } from "./UserPicker";

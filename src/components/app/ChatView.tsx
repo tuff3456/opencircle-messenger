@@ -84,7 +84,7 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
   const who = (id: string) => byId[id] ?? extraProfiles[id];
 
   async function sendMsg(fields: Partial<Message>) {
-    if (profile?.banned) return toast.error("You are banned.");
+    if (profile?.banned) { toast.error("You are banned."); return; }
     const { error } = await db.from("messages").insert({ conversation_id: conv.id, sender_id: me, ...fields });
     if (error) toast.error(error.message);
   }
@@ -307,7 +307,7 @@ export function PollDialog({ open, onClose, onCreate }: { open: boolean; onClose
           {opts.length < 8 && <Button variant="outline" onClick={() => setOpts([...opts, ""])}>Add option</Button>}
           <Button onClick={() => {
             const clean = opts.map((o) => o.trim()).filter(Boolean);
-            if (!q.trim() || clean.length < 2) return toast.error("Add a question and at least 2 options.");
+            if (!q.trim() || clean.length < 2) { toast.error("Add a question and at least 2 options."); return; }
             onCreate(q.trim(), clean); setQ(""); setOpts(["", ""]); onClose();
           }}>Post poll</Button>
         </div>

@@ -13,7 +13,7 @@ const ICE: RTCConfiguration = {
 
 type Peer = { id: string; pc: RTCPeerConnection; stream: MediaStream; pending: RTCIceCandidateInit[]; video: boolean };
 
-function Tile({ stream, name, avatar, muted, mirrored, hasVideo }: { stream: MediaStream | null; name: string; avatar?: string | null; muted?: boolean; mirrored?: boolean; hasVideo: boolean }) {
+function Tile({ stream, name, avatar, muted, mirrored, hasVideo }: { stream: MediaStream | null; name: string; avatar?: string | null | undefined; muted?: boolean; mirrored?: boolean; hasVideo: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => { if (ref.current && stream && ref.current.srcObject !== stream) ref.current.srcObject = stream; }, [stream]);
   return (
@@ -174,14 +174,14 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
     if (videoMode === "camera") return setVideoTrack(null, "off");
     try {
       const s = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } });
-      setVideoTrack(s.getVideoTracks()[0], "camera");
+      setVideoTrack(s.getVideoTracks()[0] ?? null, "camera");
     } catch { toast.error("Camera blocked. Allow camera access in Chrome."); }
   }
   async function toggleScreen() {
     if (videoMode === "screen") return setVideoTrack(null, "off");
     try {
       const s = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const t = s.getVideoTracks()[0];
+      const t = s.getVideoTracks()[0]; if (!t) return;
       t.onended = () => setVideoTrack(null, "off");
       setVideoTrack(t, "screen");
     } catch { /* cancelled */ }
