@@ -258,6 +258,30 @@ export type Database = {
           },
         ]
       }
+      password_requests: {
+        Row: {
+          created_at: string
+          id: string
+          reason: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          reason: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          reason?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       poll_votes: {
         Row: {
           message_id: string
@@ -284,6 +308,30 @@ export type Database = {
           },
         ]
       }
+      prank_events: {
+        Row: {
+          author_id: string
+          created_at: string
+          effect: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          author_id: string
+          created_at?: string
+          effect: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          author_id?: string
+          created_at?: string
+          effect?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -293,6 +341,7 @@ export type Database = {
           created_at: string
           display_name: string
           id: string
+          last_seen: string | null
           special_link: string | null
           status: string | null
           username: string
@@ -305,6 +354,7 @@ export type Database = {
           created_at?: string
           display_name: string
           id: string
+          last_seen?: string | null
           special_link?: string | null
           status?: string | null
           username: string
@@ -317,6 +367,7 @@ export type Database = {
           created_at?: string
           display_name?: string
           id?: string
+          last_seen?: string | null
           special_link?: string | null
           status?: string | null
           username?: string
@@ -447,6 +498,7 @@ export type Database = {
           username: string
         }[]
       }
+      touch_presence: { Args: never; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "user"

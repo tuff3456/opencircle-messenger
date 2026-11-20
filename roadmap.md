@@ -4,3 +4,8 @@
 - [x] Friends, search, people you may know
 - [x] Calls: single call type with camera toggle, screen share, soundboard, voice changer
 - [x] Admin panel (code 4001): ban, kick, edit/delete msgs, view all chats, join any call, announcements, polls, admin grants, links, rename
+- [ ] Finish and verify call audio, screen-share audio, and remaining app checks
+- [ ] Password changes and admin-reviewed password applications
+- [ ] Online/offline presence and saved photo/banner positioning
+- [ ] Notifications with custom sounds and selectable website styles
+- [ ] Dismissible admin prank options
