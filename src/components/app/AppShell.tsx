@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,15 +13,24 @@ import { ProfileDialog } from "./ProfileDialog";
 import { SettingsDialog, NewGroupDialog } from "./Settings";
 import { AdminPanel } from "./AdminPanel";
 import { UserPicker } from "./UserPicker";
+import { PresenceProvider, OnlineStatus } from "./Presence";
+import { readPreferences, playNotification } from "@/lib/preferences";
 
 type ConvRow = Conversation & { members: Profile[] };
 type Tab = "chats" | "people" | "groups" | "news";
 
 export function AppShell() {
   const { user, profile, isAdmin, refresh } = useAuth();
-  const me = user!.id;
+  const me = user?.id ?? '';
   const [convs, setConvs] = useState<ConvRow[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
+  const activeRef = useRef<string | null>(null);
+  useEffect(() => { activeRef.current = active?.id ?? null; }, [active]);
+  const notify = (title: string, body: string) => {
+    const prefs = readPreferences(); if (!prefs.notifications) return;
+    void playNotification(prefs);
+    if (document.hidden && "Notification" in window && Notification.permission === "granted") { const notice = new Notification(title, { body }); notice.onclick = () => { window.focus(); notice.close(); }; }
+  };
   const [callConv, setCallConv] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("chats");
@@ -48,16 +57,21 @@ export function AppShell() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
         const m = p.new as { sender_id: string; conversation_id: string; content: string };
         loadConvs();
-        if (m.sender_id !== me && document.hidden === false) {
-          /* in-app notice for other chats */
+        if (m.sender_id !== me && (document.hidden || m.conversation_id !== activeRef.current)) {
+          notify('New message', m.content || 'New attachment');
+          if (readPreferences().notifications) toast('New message', { description: m.content || 'New attachment', action: { label: 'Open', onClick: () => { void openConversation(m.conversation_id); } } });
         }
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "calls" }, (p) => {
         const c = p.new as { started_by: string; conversation_id: string };
         if (c.started_by === me) return;
+        notify("Incoming call", "Someone is calling you");
+        if (!readPreferences().notifications) return;
         toast("📞 Incoming call", { duration: 20000, action: { label: "Join", onClick: () => { openConversation(c.conversation_id); setCallConv(c.conversation_id); } } });
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, (p) => {
+        notify("Announcement", (p.new as { content: string }).content);
+        if (!readPreferences().notifications) return;
         toast("📢 Announcement", { description: (p.new as { content: string }).content, duration: 15000 });
       })
       .subscribe();
@@ -96,7 +110,7 @@ export function AppShell() {
   const activeTitle = active ? convTitle(active, convs.find((c) => c.id === active.id)?.members ?? [], me) : "";
 
   return (
-    <AppContext.Provider value={{ openProfile: setProfileId, openConversation, dmUser, joinCall: (id) => setCallConv(id) }}>
+    <PresenceProvider><AppContext.Provider value={{ openProfile: setProfileId, openConversation, dmUser, joinCall: (id) => setCallConv(id) }}>
       <div className="flex h-screen overflow-hidden">
         <aside className={`${active ? "hidden md:flex" : "flex"} w-full md:w-80 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground`}>
           <div className="px-4 pt-4 pb-2">
@@ -123,6 +137,7 @@ export function AppShell() {
                       <div className="min-w-0">
                         <p className="truncate font-semibold">{convTitle(c, c.members, me)}</p>
                         <p className="truncate text-xs text-muted-foreground">{c.is_group ? `${c.members.length} members ${c.is_private ? "· 🔒" : "· 🌍"}` : `@${other?.username ?? ""}`}</p>
+                        {!c.is_group && <OnlineStatus userId={other?.id} />}
                       </div>
                     </button>
                   );
@@ -168,7 +183,7 @@ export function AppShell() {
         </DialogContent>
       </Dialog>
       {isAdmin && <AdminPanel open={adminOpen} onClose={() => setAdminOpen(false)} />}
-    </AppContext.Provider>
+    </AppContext.Provider></PresenceProvider>
   );
 }
 
@@ -191,7 +206,7 @@ function PeopleTab({ onPick }: { onPick: (id: string) => void }) {
       <Avatar path={p.avatar_url} name={p.display_name} className="size-9" onClick={() => onPick(p.id)} />
       <button className="min-w-0 flex-1 text-left" onClick={() => onPick(p.id)}>
         <p className="truncate text-sm font-semibold">{p.display_name}</p>
-        <p className="truncate text-xs text-muted-foreground">@{p.username}{extra && ` · ${extra}`}</p>
+        <p className="truncate text-xs text-muted-foreground">@{p.username}{extra && ` · ${extra}`}</p><OnlineStatus userId={p.id} />
       </button>{right}
     </div>
   );

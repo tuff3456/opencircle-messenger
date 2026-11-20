@@ -9,6 +9,8 @@ import { Label } from "@/components/ui/label";
 import { db, uploadFile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
 import { Avatar, useSigned } from "./Media";
+import { ImagePositioner } from "./ImagePositioner";
+import { AccountOptions } from "./AccountOptions";
 
 export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { profile, user, refresh } = useAuth();
@@ -16,21 +18,31 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
   const [bio, setBio] = useState("");
   const [status, setStatus] = useState("");
   const banner = useSigned(profile?.banner_url);
+  const [crop, setCrop] = useState<{ file: File; field: "avatar_url" | "banner_url" } | null>(null);
   useEffect(() => { if (profile) { setDisplay(profile.display_name); setBio(profile.bio ?? ""); setStatus(profile.status ?? ""); } }, [profile, open]);
   if (!profile || !user) return null;
 
   async function upload(field: "avatar_url" | "banner_url", f?: File) {
-    if (!f) return;
-    if (!f.type.startsWith("image/")) { toast.error("Pick an image."); return; }
-    const path = await uploadFile(user!.id, f, f.name);
-    await db.from("profiles").update({ [field]: path }).eq("id", user!.id);
-    refresh();
+    if (!f || !user) return;
+    try { const path = await uploadFile(user.id, f, f.name);
+      const { error } = await db.from("profiles").update({ [field]: path }).eq("id", user.id);
+      if (error) throw error;
+      await refresh(); setCrop(null); toast.success("Image saved");
+    } catch (error) { toast.error((error as Error).message); }
+  }
+  async function reposition(field: "avatar_url" | "banner_url") {
+    const { signedUrl } = await import('@/lib/db');
+    const url = await signedUrl(profile?.[field]); if (!url) return;
+    try { const response = await fetch(url); const blob = await response.blob(); setCrop({ field, file: new File([blob], 'image.jpg', { type: blob.type }) }); }
+    catch { toast.error('Could not open image.'); }
   }
   async function save() {
-    const { error } = await db.from("profiles").update({ display_name: display.trim() || profile!.username, bio, status }).eq("id", user!.id);
+    if (!user || !profile) return;
+    const { error } = await db.from("profiles").update({ display_name: display.trim() || profile.username, bio, status }).eq("id", user.id);
     if (error) toast.error(error.message); else { toast.success("Profile saved"); refresh(); onClose(); }
   }
   return (
+    <>
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Your profile</DialogTitle></DialogHeader>
@@ -38,17 +50,21 @@ export function SettingsDialog({ open, onClose }: { open: boolean; onClose: () =
         <div className="flex items-center gap-3">
           <Avatar path={profile.avatar_url} name={profile.display_name} className="size-16 text-2xl" />
           <div className="flex flex-col gap-1 text-sm">
-            <label className="cursor-pointer text-primary hover:underline">Change profile photo<input type="file" accept="image/*" hidden onChange={(e) => upload("avatar_url", e.target.files?.[0])} /></label>
-            <label className="cursor-pointer text-primary hover:underline">Change banner<input type="file" accept="image/*" hidden onChange={(e) => upload("banner_url", e.target.files?.[0])} /></label>
+            <label className="cursor-pointer text-primary hover:underline">Change profile photo<input type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) setCrop({ file, field: "avatar_url" }); e.target.value = ""; }} /></label>
+            <label className="cursor-pointer text-primary hover:underline">Change banner<input type="file" accept="image/*" hidden onChange={(e) => { const file = e.target.files?.[0]; if (file) setCrop({ file, field: "banner_url" }); e.target.value = ""; }} /></label>
           </div>
         </div>
+        <div className="flex gap-2">{profile.avatar_url && <Button size="sm" variant="outline" onClick={() => reposition("avatar_url")}>Position photo</Button>}{profile.banner_url && <Button size="sm" variant="outline" onClick={() => reposition("banner_url")}>Position banner</Button>}</div>
         <p className="text-sm text-muted-foreground">Username: @{profile.username}</p>
         <div className="space-y-1"><Label>Display name</Label><Input value={display} onChange={(e) => setDisplay(e.target.value)} /></div>
         <div className="space-y-1"><Label>Status</Label><Input value={status} onChange={(e) => setStatus(e.target.value)} placeholder="Studying the Romans 🏛️" /></div>
         <div className="space-y-1"><Label>Bio</Label><Textarea value={bio} onChange={(e) => setBio(e.target.value)} rows={3} /></div>
-        <Button onClick={save}>Save</Button>
+        <Button onClick={save}>Save profile</Button>
+        <AccountOptions />
       </DialogContent>
     </Dialog>
+    <ImagePositioner file={crop?.file ?? null} banner={crop?.field === "banner_url"} onClose={() => setCrop(null)} onSave={async (file) => { if (crop) await upload(crop.field, file); }} />
+    </>
   );
 }
 

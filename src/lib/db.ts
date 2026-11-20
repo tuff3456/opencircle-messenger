@@ -7,7 +7,7 @@ export { supabase };
 export type Profile = {
   id: string; username: string; display_name: string; avatar_url: string | null;
   banner_url: string | null; bio: string | null; status: string | null; banned: boolean;
-  special_link: string | null; created_at: string;
+  special_link: string | null; created_at: string; last_seen?: string | null;
 };
 export type Conversation = {
   id: string; name: string | null; is_group: boolean; is_private: boolean;

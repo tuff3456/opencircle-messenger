@@ -8,4 +8,4 @@
 - [ ] Password changes and admin-reviewed password applications
 - [ ] Online/offline presence and saved photo/banner positioning
 - [ ] Notifications with custom sounds and selectable website styles
-- [ ] Dismissible admin prank options
+- [ ] Admin troll options to change others' voices during calls

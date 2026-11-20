@@ -6,6 +6,7 @@ export function useSigned(path: string | null | undefined) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
+    setUrl(null);
     signedUrl(path).then((u) => live && setUrl(u));
     return () => { live = false; };
   }, [path]);

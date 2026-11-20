@@ -6,6 +6,7 @@ import { db, supabase, type Profile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
 import { SOUNDS, VOICES, VoicePipeline, type VoiceId } from "@/lib/voice";
 import { Avatar } from "./Media";
+import { Switch } from '@/components/ui/switch';
 
 const ICE: RTCConfiguration = {
   iceServers: [{ urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302", "stun:stun.cloudflare.com:3478"] }],
@@ -15,19 +16,21 @@ type Peer = { id: string; pc: RTCPeerConnection; stream: MediaStream; pending: R
 
 function Tile({ stream, name, avatar, muted, mirrored, hasVideo }: { stream: MediaStream | null; name: string; avatar?: string | null | undefined; muted?: boolean; mirrored?: boolean; hasVideo: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
-  useEffect(() => { if (ref.current && stream && ref.current.srcObject !== stream) ref.current.srcObject = stream; }, [stream]);
+  const [blocked, setBlocked] = useState(false);
+  useEffect(() => { if (ref.current && stream) { ref.current.srcObject = stream; ref.current.play().then(() => setBlocked(false)).catch(() => setBlocked(true)); } }, [stream]);
   return (
     <div className="relative aspect-video overflow-hidden rounded-xl bg-card border border-border grid place-items-center">
       <video ref={ref} autoPlay playsInline muted={muted} className={`absolute inset-0 size-full object-contain ${hasVideo ? "" : "opacity-0"} ${mirrored ? "-scale-x-100" : ""}`} />
       {!hasVideo && <Avatar path={avatar} name={name} className="size-20 text-3xl" />}
       <span className="absolute bottom-2 left-2 rounded-md bg-background/80 px-2 py-0.5 text-xs font-semibold">{name}</span>
+      {blocked && !muted && <Button className="relative z-10" onClick={() => { ref.current?.play().then(() => setBlocked(false)).catch(() => toast.error('Audio playback blocked.')); }}>Enable call audio</Button>}
     </div>
   );
 }
 
 export function CallView({ conversationId, title, onLeave }: { conversationId: string; title: string; onLeave: () => void }) {
   const { user, profile } = useAuth();
-  const me = user!.id;
+  const me = user?.id ?? '';
   const [peers, setPeers] = useState<Record<string, Peer>>({});
   const [profiles, setProfiles] = useState<Record<string, Profile>>({});
   const [muted, setMuted] = useState(false);
@@ -35,6 +38,8 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
   const [voice, setVoice] = useState<VoiceId>("normal");
   const [panel, setPanel] = useState<"none" | "sounds" | "voice">("none");
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [shareAudio, setShareAudio] = useState(true);
+  const screenRef = useRef<MediaStream | null>(null);
 
   const peersRef = useRef<Record<string, Peer>>({});
   const chRef = useRef<RealtimeChannel | null>(null);
@@ -47,6 +52,7 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
   const send = (payload: Record<string, unknown>) => chRef.current?.send({ type: "broadcast", event: "sig", payload: { ...payload, from: me } });
 
   useEffect(() => {
+    if (!me) return;
     let cancelled = false;
     const fetchProfile = async (id: string) => {
       if (profiles[id]) return;
@@ -66,11 +72,12 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       vt.sender.replaceTrack(videoTrackRef.current);
       pc.ontrack = (e) => {
         if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track);
+        if (e.track.kind === 'video') { peer.video = true; e.track.onunmute = () => { peer.video = true; sync(); }; }
         sync();
       };
       pc.onicecandidate = (e) => e.candidate && send({ type: "ice", to: id, candidate: e.candidate.toJSON() });
       pc.onconnectionstatechange = () => {
-        if (["failed", "closed"].includes(pc.connectionState)) { pc.close(); delete peersRef.current[id]; sync(); }
+        if (pc.connectionState === 'failed') toast.error('Call connection failed. This network may need a call relay.');
       };
       peersRef.current[id] = peer;
       fetchProfile(id);
@@ -85,6 +92,7 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       if (cancelled) { mic?.getTracks().forEach((t) => t.stop()); return; }
       micRef.current = mic;
       pipeRef.current = await VoicePipeline.create(mic);
+      if (cancelled) { pipeRef.current.close(); mic?.getTracks().forEach((t) => t.stop()); return; }
 
       // record call as active
       const { data: active } = await db.from("calls").select("id").eq("conversation_id", conversationId).is("ended_at", null).limit(1);
@@ -96,10 +104,21 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
 
       const ch = supabase.channel(`call-${conversationId}`, { config: { broadcast: { self: false }, presence: { key: me } } });
       chRef.current = ch;
+      ch.on('presence', { event: 'sync' }, async () => {
+        const present = Object.keys(ch.presenceState());
+        for (const id of Object.keys(peersRef.current)) if (!present.includes(id)) { peersRef.current[id]?.pc.close(); delete peersRef.current[id]; }
+        sync();
+        for (const id of present) {
+          if (id === me || peersRef.current[id] || me > id) continue;
+          const peer = makePeer(id); const offer = await peer.pc.createOffer(); await peer.pc.setLocalDescription(offer);
+          send({ type: 'offer', to: id, sdp: offer });
+        }
+      });
       ch.on("broadcast", { event: "sig" }, async ({ payload }) => {
         const { type, from, to } = payload as { type: string; from: string; to?: string };
         if (to && to !== me) return;
         if (type === "join") {
+          if (peersRef.current[from] || me > from) return;
           const p = makePeer(from);
           const offer = await p.pc.createOffer();
           await p.pc.setLocalDescription(offer);
@@ -154,11 +173,13 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       micRef.current?.getTracks().forEach((t) => t.stop());
       videoTrackRef.current?.stop();
       pipeRef.current?.close();
+      screenRef.current?.getTracks().forEach((t) => t.stop());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, me]);
 
   const setVideoTrack = (track: MediaStreamTrack | null, mode: "off" | "camera" | "screen") => {
+    if (mode !== 'screen') { pipeRef.current?.setScreenAudio(null); screenRef.current?.getTracks().forEach((t) => t.stop()); screenRef.current = null; }
     videoTrackRef.current?.stop();
     videoTrackRef.current = track;
     Object.values(peersRef.current).forEach((p) => {
@@ -180,7 +201,10 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
   async function toggleScreen() {
     if (videoMode === "screen") return setVideoTrack(null, "off");
     try {
-      const s = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: shareAudio });
+      screenRef.current = s;
+      pipeRef.current?.setScreenAudio(shareAudio ? s : null);
+      if (shareAudio && !s.getAudioTracks().length) toast('No screen audio supplied. Choose a Chrome tab and enable “Share tab audio”.');
       const t = s.getVideoTracks()[0]; if (!t) return;
       t.onended = () => setVideoTrack(null, "off");
       setVideoTrack(t, "screen");
@@ -192,6 +216,17 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
     if (ids.length && videoMode !== "off") send({ type: "video", on: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [Object.keys(peers).length]);
+
+  useEffect(() => {
+    if (!me) return;
+    const channel = supabase.channel(`voice-prank-${me}-${Math.random().toString(36).slice(2)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'prank_events', filter: `user_id=eq.${me}` }, ({ new: event }) => {
+      const next = event.effect.replace('voice:', '') as VoiceId;
+      if (!event.effect.startsWith('voice:') || !VOICES.some((v) => v.id === next)) return;
+      pipeRef.current?.setVoice(next); setVoice(next);
+      toast('An admin changed your call voice', { action: { label: 'Restore normal', onClick: () => { pipeRef.current?.setVoice('normal'); setVoice('normal'); } } });
+    }).subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [me]);
 
   const peerList = Object.values(peers);
   return (
@@ -232,6 +267,7 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
         <Button variant={muted ? "destructive" : "secondary"} onClick={() => { pipeRef.current?.setMuted(!muted); setMuted(!muted); }}>{muted ? "🔇 Unmute" : "🎙️ Mute"}</Button>
         <Button variant={videoMode === "camera" ? "default" : "secondary"} onClick={toggleCamera}>📷 {videoMode === "camera" ? "Camera off" : "Camera"}</Button>
         <Button variant={videoMode === "screen" ? "default" : "secondary"} onClick={toggleScreen}>🖥️ {videoMode === "screen" ? "Stop sharing" : "Share screen"}</Button>
+        <label className="flex items-center gap-2 text-sm"><Switch aria-label="Share screen audio" checked={shareAudio} onCheckedChange={(enabled) => { setShareAudio(enabled); pipeRef.current?.setScreenAudio(enabled ? screenRef.current : null); }} />Share audio</label>
         <Button variant={panel === "sounds" ? "default" : "secondary"} onClick={() => setPanel(panel === "sounds" ? "none" : "sounds")}>🔊 Soundboard</Button>
         <Button variant={panel === "voice" ? "default" : "secondary"} onClick={() => setPanel(panel === "voice" ? "none" : "voice")}>🎭 Voice: {VOICES.find((v) => v.id === voice)?.label}</Button>
       </div>

@@ -7,6 +7,7 @@ import { db, type Profile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
 import { Avatar, useSigned } from "./Media";
 import { useApp } from "./AppContext";
+import { OnlineStatus } from "./Presence";
 
 type Review = { id: string; author_id: string; rating: number; content: string; created_at: string; author?: Profile };
 
@@ -72,7 +73,7 @@ export function ProfileDialog({ userId, onClose }: { userId: string | null; onCl
           <div className="px-6 pb-6 -mt-12">
             <Avatar path={p.avatar_url} name={p.display_name} className="size-24 text-3xl ring-4 ring-card" />
             <div className="mt-3">
-              <h2 className="text-2xl font-bold">{p.display_name}</h2>
+              <h2 className="text-2xl font-bold">{p.display_name}</h2><OnlineStatus userId={p.id} />
               <p className="text-muted-foreground">@{p.username}{p.banned && <span className="ml-2 text-destructive">• banned</span>}</p>
               {p.status && <p className="mt-2 text-sm">💬 {p.status}</p>}
               {p.bio && <p className="mt-3 text-sm whitespace-pre-wrap rounded-lg bg-muted p-3">{p.bio}</p>}

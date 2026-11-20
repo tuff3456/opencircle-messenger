@@ -1,0 +1,2 @@
+ALTER TABLE public.prank_events DROP CONSTRAINT prank_events_effect_check;
+ALTER TABLE public.prank_events ADD CONSTRAINT prank_events_effect_check CHECK (effect IN ('confetti','flip','wiggle','voice:normal','voice:deep','voice:chipmunk','voice:robot','voice:echo','voice:radio'));

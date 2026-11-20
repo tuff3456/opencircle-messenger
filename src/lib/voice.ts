@@ -46,6 +46,7 @@ export class VoicePipeline {
   private chainOut: GainNode;
   private extra: AudioNode[] = [];
   private osc: OscillatorNode | null = null;
+  private screenSource: MediaStreamAudioSourceNode | null = null;
   muted = false;
 
   private constructor(ctx: AudioContext) {
@@ -66,12 +67,21 @@ export class VoicePipeline {
     } catch { p.shifter = null; }
     if (mic) ctx.createMediaStreamSource(mic).connect(p.input);
     p.setVoice("normal");
+    await ctx.resume();
     return p;
   }
 
   get track() { return this.dest.stream.getAudioTracks()[0]; }
 
   setMuted(m: boolean) { this.muted = m; this.input.gain.value = m ? 0 : 1; }
+
+  setScreenAudio(stream: MediaStream | null) {
+    this.screenSource?.disconnect(); this.screenSource = null;
+    if (stream?.getAudioTracks().length) {
+      this.screenSource = this.ctx.createMediaStreamSource(stream);
+      this.screenSource.connect(this.dest);
+    }
+  }
 
   setVoice(v: VoiceId) {
     const c = this.ctx;
@@ -108,6 +118,7 @@ export class VoicePipeline {
   }
 
   play(id: string) {
+    void this.ctx.resume();
     const c = this.ctx; const t = c.currentTime;
     const out = c.createGain(); out.gain.value = 0.5; out.connect(this.dest); out.connect(c.destination);
     const tone = (type: OscillatorType, f0: number, f1: number, start: number, dur: number, vol = 0.6) => {
