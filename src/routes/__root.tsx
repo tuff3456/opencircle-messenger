@@ -13,6 +13,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { readPreferences } from '@/lib/preferences';
 
 function NotFoundComponent() {
   return (
@@ -122,6 +123,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => { document.documentElement.dataset['theme'] = readPreferences().theme; }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

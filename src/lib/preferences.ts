@@ -6,7 +6,7 @@ export function readPreferences(): Preferences {
 }
 export function savePreferences(value: Preferences) {
   localStorage.setItem('jhp-preferences', JSON.stringify(value));
-  document.documentElement.dataset.theme = value.theme;
+  document.documentElement.dataset['theme'] = value.theme;
   window.dispatchEvent(new Event('jhp-preferences'));
 }
 export async function playNotification(p = readPreferences()) {

@@ -14,7 +14,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   }, [user?.id]);
   return <PresenceContext.Provider value={online}>{children}</PresenceContext.Provider>;
 }
-export function OnlineStatus({ userId }: { userId?: string }) {
+export function OnlineStatus({ userId }: { userId?: string | undefined }) {
   const online = useContext(PresenceContext).has(userId ?? '');
   return <span className={`inline-flex items-center gap-1 text-xs ${online ? 'text-success' : 'text-muted-foreground'}`}><span className={`size-2 rounded-full ${online ? 'bg-success' : 'bg-muted-foreground'}`} />{online ? 'Online' : 'Offline'}</span>;
 }

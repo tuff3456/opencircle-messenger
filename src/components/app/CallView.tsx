@@ -16,14 +16,27 @@ type Peer = { id: string; pc: RTCPeerConnection; stream: MediaStream; pending: R
 
 function Tile({ stream, name, avatar, muted, mirrored, hasVideo }: { stream: MediaStream | null; name: string; avatar?: string | null | undefined; muted?: boolean; mirrored?: boolean; hasVideo: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
   const [blocked, setBlocked] = useState(false);
-  useEffect(() => { if (ref.current && stream) { ref.current.srcObject = stream; ref.current.play().then(() => setBlocked(false)).catch(() => setBlocked(true)); } }, [stream]);
+  useEffect(() => {
+    if (!stream) return;
+    const update = () => {
+      if (ref.current) { ref.current.srcObject = new MediaStream(stream.getVideoTracks()); void ref.current.play().catch(() => {}); }
+      if (!muted && audioRef.current && stream.getAudioTracks().length) {
+        audioRef.current.srcObject = new MediaStream(stream.getAudioTracks());
+        audioRef.current.play().then(() => setBlocked(false)).catch(() => setBlocked(true));
+      }
+    };
+    update(); stream.addEventListener('addtrack', update);
+    return () => { stream.removeEventListener('addtrack', update); };
+  }, [stream, muted]);
   return (
     <div className="relative aspect-video overflow-hidden rounded-xl bg-card border border-border grid place-items-center">
-      <video ref={ref} autoPlay playsInline muted={muted} className={`absolute inset-0 size-full object-contain ${hasVideo ? "" : "opacity-0"} ${mirrored ? "-scale-x-100" : ""}`} />
+      <video ref={ref} autoPlay playsInline muted className={`absolute inset-0 size-full object-contain ${hasVideo ? "" : "opacity-0"} ${mirrored ? "-scale-x-100" : ""}`} />
+      {!muted && <audio ref={audioRef} autoPlay />}
       {!hasVideo && <Avatar path={avatar} name={name} className="size-20 text-3xl" />}
       <span className="absolute bottom-2 left-2 rounded-md bg-background/80 px-2 py-0.5 text-xs font-semibold">{name}</span>
-      {blocked && !muted && <Button className="relative z-10" onClick={() => { ref.current?.play().then(() => setBlocked(false)).catch(() => toast.error('Audio playback blocked.')); }}>Enable call audio</Button>}
+      {blocked && !muted && <Button className="relative z-10" onClick={() => { audioRef.current?.play().then(() => setBlocked(false)).catch(() => toast.error('Audio playback blocked.')); }}>Enable call audio</Button>}
     </div>
   );
 }
@@ -60,19 +73,20 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       if (data) setProfiles((p) => ({ ...p, [id]: data }));
     };
 
-    const makePeer = (id: string) => {
+    const makePeer = (id: string, offering = true) => {
       const existing = peersRef.current[id];
       if (existing) return existing;
       const pc = new RTCPeerConnection(ICE);
       const stream = new MediaStream();
       const peer: Peer = { id, pc, stream, pending: [], video: false };
-      const at = pc.addTransceiver("audio", { direction: "sendrecv" });
-      at.sender.replaceTrack(pipeRef.current?.track ?? null);
-      const vt = pc.addTransceiver("video", { direction: "sendrecv" });
-      vt.sender.replaceTrack(videoTrackRef.current);
+      if (offering) {
+        const outgoingAudio = pipeRef.current?.track;
+        pc.addTransceiver(outgoingAudio ?? 'audio', { direction: 'sendrecv', streams: pipeRef.current ? [pipeRef.current.dest.stream] : [] });
+        pc.addTransceiver(videoTrackRef.current ?? 'video', { direction: 'sendrecv' });
+      }
       pc.ontrack = (e) => {
         if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track);
-        if (e.track.kind === 'video') { peer.video = true; e.track.onunmute = () => { peer.video = true; sync(); }; }
+        if (e.track.kind === 'video') { peer.video = !e.track.muted; e.track.onunmute = () => { peer.video = true; sync(); }; }
         sync();
       };
       pc.onicecandidate = (e) => e.candidate && send({ type: "ice", to: id, candidate: e.candidate.toJSON() });
@@ -106,13 +120,19 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       chRef.current = ch;
       ch.on('presence', { event: 'sync' }, async () => {
         const present = Object.keys(ch.presenceState());
-        for (const id of Object.keys(peersRef.current)) if (!present.includes(id)) { peersRef.current[id]?.pc.close(); delete peersRef.current[id]; }
         sync();
         for (const id of present) {
           if (id === me || peersRef.current[id] || me > id) continue;
           const peer = makePeer(id); const offer = await peer.pc.createOffer(); await peer.pc.setLocalDescription(offer);
           send({ type: 'offer', to: id, sdp: offer });
         }
+      });
+      ch.on('presence', { event: 'leave' }, ({ leftPresences }) => {
+        for (const presence of leftPresences) {
+          const id = presence['user']; if (typeof id !== 'string') continue;
+          peersRef.current[id]?.pc.close(); delete peersRef.current[id];
+        }
+        sync();
       });
       ch.on("broadcast", { event: "sig" }, async ({ payload }) => {
         const { type, from, to } = payload as { type: string; from: string; to?: string };
@@ -124,8 +144,13 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
           await p.pc.setLocalDescription(offer);
           send({ type: "offer", to: from, sdp: offer });
         } else if (type === "offer") {
-          const p = makePeer(from);
+          const p = makePeer(from, false);
           await p.pc.setRemoteDescription(payload.sdp);
+          for (const transceiver of p.pc.getTransceivers()) {
+            transceiver.direction = 'sendrecv';
+            await transceiver.sender.replaceTrack(transceiver.receiver.track.kind === 'audio' ? pipeRef.current?.track ?? null : videoTrackRef.current);
+            if (transceiver.receiver.track.kind === 'audio' && pipeRef.current) transceiver.sender.setStreams(pipeRef.current.dest.stream);
+          }
           for (const c of p.pending) await p.pc.addIceCandidate(c).catch(() => {});
           p.pending = [];
           const ans = await p.pc.createAnswer();
@@ -220,8 +245,10 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
   useEffect(() => {
     if (!me) return;
     const channel = supabase.channel(`voice-prank-${me}-${Math.random().toString(36).slice(2)}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'prank_events', filter: `user_id=eq.${me}` }, ({ new: event }) => {
-      const next = event.effect.replace('voice:', '') as VoiceId;
-      if (!event.effect.startsWith('voice:') || !VOICES.some((v) => v.id === next)) return;
+      const effect = event['effect'];
+      if (typeof effect !== 'string' || !effect.startsWith('voice:')) return;
+      const next = effect.replace('voice:', '') as VoiceId;
+      if (!VOICES.some((v) => v.id === next)) return;
       pipeRef.current?.setVoice(next); setVoice(next);
       toast('An admin changed your call voice', { action: { label: 'Restore normal', onClick: () => { pipeRef.current?.setVoice('normal'); setVoice('normal'); } } });
     }).subscribe();

@@ -34,4 +34,7 @@ use the editor.
 - Calls are WebRTC mesh signaled over a Realtime broadcast channel per conversation; one call type, camera/screen toggled via replaceTrack so no renegotiation is needed.
 - Media lives in the private `media` bucket (public buckets are blocked); always render via signed URLs.
 - Admin access: has_role in user_roles; code check and first-admin bootstrap happen server-side in claim_admin RPC.
+- Admin password resets use authenticated server functions with a has_role check before loading the privileged client; clients never receive admin credentials.
+- Presence uses authenticated heartbeat timestamps; browser-specific theme and sound preferences stay local, while image positioning is baked into uploaded crops for consistent display everywhere.
+- Admin call voice effects use RLS-protected recipient events rather than trusting Realtime broadcast payloads for admin privileges.
 <!-- AGENT-MEMORY:END -->

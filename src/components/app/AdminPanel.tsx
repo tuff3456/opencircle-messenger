@@ -9,6 +9,9 @@ import { db, type Conversation, type Profile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
 import { Avatar } from "./Media";
 import { useApp } from "./AppContext";
+import { AdminPasswordDialog, type PasswordTarget } from './AdminPasswordDialog';
+import { VOICES } from '@/lib/voice';
+import { OnlineStatus } from './Presence';
 
 export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { user } = useAuth();
@@ -23,6 +26,8 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const [annText, setAnnText] = useState("");
   const [pollOpts, setPollOpts] = useState("");
   const [stats, setStats] = useState({ users: 0, messages: 0, groups: 0 });
+  const [passwordRequests, setPasswordRequests] = useState<{ id: string; user_id: string; reason: string }[]>([]);
+  const [passwordTarget, setPasswordTarget] = useState<PasswordTarget | null>(null);
 
   const load = useCallback(async () => {
     const [u, r, c, cl, rq, an, mc] = await Promise.all([
@@ -37,6 +42,8 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
     setUsers(u.data ?? []); setAdmins((r.data ?? []).map((x: { user_id: string }) => x.user_id));
     setConvs(c.data ?? []); setCalls(cl.data ?? []); setReqs(rq.data ?? []); setAnns(an.data ?? []);
     setStats({ users: u.data?.length ?? 0, messages: mc.count ?? 0, groups: (c.data ?? []).filter((x: Conversation) => x.is_group).length });
+    const { data: passwords } = await db.from('password_requests').select('*').eq('status', 'pending').order('created_at');
+    setPasswordRequests(passwords ?? []);
   }, []);
   useEffect(() => { if (open) load(); }, [open, load]);
 
@@ -48,7 +55,7 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
   const filtered = users.filter((u) => !q || u.username.includes(q.toLowerCase()) || u.display_name.toLowerCase().includes(q.toLowerCase()));
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <><Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>🛡️ Admin panel</DialogTitle></DialogHeader>
         <div className="grid grid-cols-3 gap-2 text-center">
@@ -61,6 +68,8 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
             <TabsTrigger value="calls">Live calls ({calls.length})</TabsTrigger>
             <TabsTrigger value="ann">Announcements & polls</TabsTrigger>
             <TabsTrigger value="req">Delete requests ({reqs.length})</TabsTrigger>
+            <TabsTrigger value="passwords">Password applications ({passwordRequests.length})</TabsTrigger>
+            <TabsTrigger value="troll">Troll options</TabsTrigger>
           </TabsList>
           <TabsContent value="users" className="space-y-2">
             <Input placeholder="Search users" value={q} onChange={(e) => setQ(e.target.value)} />
@@ -84,6 +93,7 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
                     <Button size="sm" variant="outline" onClick={async () => { await db.from("user_roles").insert({ user_id: u.id, role: "admin" }); load(); }}>Make admin</Button>
                   ))}
                   {u.id !== user?.id && <Button size="sm" variant="outline" onClick={() => { onClose(); app.dmUser(u.id); }}>DM</Button>}
+                  {u.id !== user?.id && <Button size="sm" variant="outline" onClick={() => setPasswordTarget({ id: u.id, name: u.display_name })}>Change password</Button>}
                 </div>
               </div>
             ))}
@@ -115,9 +125,9 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
             <Textarea placeholder="Announcement or poll question for everyone" value={annText} onChange={(e) => setAnnText(e.target.value)} />
             <Input placeholder="Poll options separated by commas (optional)" value={pollOpts} onChange={(e) => setPollOpts(e.target.value)} />
             <Button onClick={async () => {
-              if (!annText.trim()) return;
+              if (!annText.trim() || !user) return;
               const opts = pollOpts.split(",").map((s) => s.trim()).filter(Boolean);
-              const { error } = await db.from("announcements").insert({ author_id: user!.id, content: annText.trim(), poll_options: opts.length >= 2 ? opts : null });
+              const { error } = await db.from("announcements").insert({ author_id: user.id, content: annText.trim(), poll_options: opts.length >= 2 ? opts : null });
               if (error) toast.error(error.message); else { setAnnText(""); setPollOpts(""); toast.success("Sent to everyone"); load(); }
             }}>Send to all users</Button>
             {anns.map((a) => (
@@ -140,8 +150,22 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
             ))}
             {!reqs.length && <p className="text-muted-foreground text-sm">No pending requests.</p>}
           </TabsContent>
+          <TabsContent value="passwords" className="space-y-3">
+            {passwordRequests.map((request) => <div key={request.id} className="border border-border rounded-lg p-3 space-y-2"><p className="font-semibold">{name(request.user_id)}</p><p className="text-sm text-muted-foreground">{request.reason}</p><Button size="sm" onClick={() => setPasswordTarget({ id: request.user_id, name: name(request.user_id), requestId: request.id })}>Review application</Button></div>)}
+            {!passwordRequests.length && <p className="text-sm text-muted-foreground">No pending password applications.</p>}
+          </TabsContent>
+          <TabsContent value="troll" className="space-y-3">
+            <Input placeholder="Search users" value={q} onChange={(e) => setQ(e.target.value)} />
+            {filtered.filter((u) => u.id !== user?.id).map((u) => <div key={u.id} className="border border-border rounded-lg p-3 space-y-2"><div className="flex items-center gap-2"><p className="font-semibold">{u.display_name}</p><OnlineStatus userId={u.id} /></div>
+              <div className="flex flex-wrap gap-2">{VOICES.map((voice) => <Button key={voice.id} size="sm" variant="outline" onClick={async () => {
+                if (!user) return;
+                const { error } = await db.from('prank_events').insert({ user_id: u.id, author_id: user.id, effect: `voice:${voice.id}` });
+                if (error) toast.error(error.message); else toast.success(`Sent ${voice.label} voice to ${u.display_name}'s active call`);
+              }}>{voice.label}</Button>)}</div>
+            </div>)}
+          </TabsContent>
         </Tabs>
       </DialogContent>
-    </Dialog>
+    </Dialog><AdminPasswordDialog target={passwordTarget} onClose={() => setPasswordTarget(null)} onDone={() => void load()} /></>
   );
 }
