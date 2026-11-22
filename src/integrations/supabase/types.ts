@@ -135,32 +135,44 @@ export type Database = {
       conversations: {
         Row: {
           avatar_url: string | null
+          background_url: string | null
           created_at: string
           created_by: string
           id: string
           is_group: boolean
           is_private: boolean
           last_message_at: string
+          members_edit_background: boolean
+          members_edit_cover: boolean
+          members_edit_name: boolean
           name: string | null
         }
         Insert: {
           avatar_url?: string | null
+          background_url?: string | null
           created_at?: string
           created_by: string
           id?: string
           is_group?: boolean
           is_private?: boolean
           last_message_at?: string
+          members_edit_background?: boolean
+          members_edit_cover?: boolean
+          members_edit_name?: boolean
           name?: string | null
         }
         Update: {
           avatar_url?: string | null
+          background_url?: string | null
           created_at?: string
           created_by?: string
           id?: string
           is_group?: boolean
           is_private?: boolean
           last_message_at?: string
+          members_edit_background?: boolean
+          members_edit_cover?: boolean
+          members_edit_name?: boolean
           name?: string | null
         }
         Relationships: []
@@ -252,6 +264,54 @@ export type Database = {
           {
             foreignKeyName: "messages_sender_id_fkey"
             columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          body: string
+          conversation_id: string | null
+          created_at: string
+          id: string
+          kind: string
+          read_at: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          kind: string
+          read_at?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          kind?: string
+          read_at?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]

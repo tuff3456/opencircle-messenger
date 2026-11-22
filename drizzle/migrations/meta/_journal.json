@@ -29,6 +29,13 @@
       "when": 1795143013971,
       "tag": "0003_admin_call_voice_effects",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795313760830,
+      "tag": "0004_chat_appearance_and_notifications",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,7 @@
 # Roadmap
+- [ ] Add reload-for-updates control and saved notification inbox
+- [ ] Add group-owner appearance permissions and shared DM appearance editing
+- [ ] Verify visible admin access to private live calls (no hidden listening)
 - [x] Username/password accounts, profiles (avatar, banner, bio, status, reviews + delete requests)
 - [x] DMs, groups (private/public), messages, photos, videos, files, voice notes, polls
 - [x] Friends, search, people you may know
