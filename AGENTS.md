@@ -32,6 +32,7 @@ use the editor.
 <!-- AGENT-MEMORY:BEGIN -->
 - Accounts use username-only login mapped to a synthetic email (see src/lib/db.ts usernameToEmail); never change a username after signup or login breaks.
 - Calls are WebRTC mesh signaled over a Realtime broadcast channel per conversation; one call type, camera/screen toggled via replaceTrack so no renegotiation is needed.
+- Replace remote stream identity when negotiated tracks arrive so mounted call tiles bind audio even when signaling finishes after their first render.
 - Media lives in the private `media` bucket (public buckets are blocked); always render via signed URLs.
 - Admin access: has_role in user_roles; code check and first-admin bootstrap happen server-side in claim_admin RPC.
 - Admin password resets use authenticated server functions with a has_role check before loading the privileged client; clients never receive admin credentials.

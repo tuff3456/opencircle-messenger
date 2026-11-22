@@ -86,6 +86,9 @@ export function CallView({ conversationId, title, onLeave }: { conversationId: s
       }
       pc.ontrack = (e) => {
         if (!stream.getTracks().includes(e.track)) stream.addTrack(e.track);
+        // A manually added track does not dispatch addtrack; replace the stream
+        // identity so already-mounted tiles bind newly negotiated media.
+        peer.stream = new MediaStream(stream.getTracks());
         if (e.track.kind === 'video') { peer.video = !e.track.muted; e.track.onunmute = () => { peer.video = true; sync(); }; }
         sync();
       };
