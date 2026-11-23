@@ -12,6 +12,8 @@ export type Profile = {
 export type Conversation = {
   id: string; name: string | null; is_group: boolean; is_private: boolean;
   avatar_url: string | null; created_by: string; created_at: string; last_message_at: string;
+  background_url?: string | null; members_edit_name?: boolean;
+  members_edit_cover?: boolean; members_edit_background?: boolean;
 };
 export type Message = {
   id: string; conversation_id: string; sender_id: string; kind: string; content: string | null;

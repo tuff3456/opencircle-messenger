@@ -38,4 +38,6 @@ use the editor.
 - Admin password resets use authenticated server functions with a has_role check before loading the privileged client; clients never receive admin credentials.
 - Presence uses authenticated heartbeat timestamps; browser-specific theme and sound preferences stay local, while image positioning is baked into uploaded crops for consistent display everywhere.
 - Admin call voice effects use RLS-protected recipient events rather than trusting Realtime broadcast payloads for admin privileges.
+- Chat appearance uses per-field group permissions enforced by a database trigger; DM participants share editing rights, while identity and permission fields remain protected.
+- Notification delivery is persisted per recipient by database triggers; live alerts subscribe to that inbox to avoid duplicates and limit notifications to chat members.
 <!-- AGENT-MEMORY:END -->

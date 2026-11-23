@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,8 @@ import { SettingsDialog, NewGroupDialog } from "./Settings";
 import { AdminPanel } from "./AdminPanel";
 import { UserPicker } from "./UserPicker";
 import { PresenceProvider, OnlineStatus } from "./Presence";
-import { readPreferences, playNotification } from "@/lib/preferences";
+import { Notifications } from './Notifications';
+import { RefreshCw } from 'lucide-react';
 
 type ConvRow = Conversation & { members: Profile[] };
 type Tab = "chats" | "people" | "groups" | "news";
@@ -24,13 +25,6 @@ export function AppShell() {
   const me = user?.id ?? '';
   const [convs, setConvs] = useState<ConvRow[]>([]);
   const [active, setActive] = useState<Conversation | null>(null);
-  const activeRef = useRef<string | null>(null);
-  useEffect(() => { activeRef.current = active?.id ?? null; }, [active]);
-  const notify = (title: string, body: string) => {
-    const prefs = readPreferences(); if (!prefs.notifications) return;
-    void playNotification(prefs);
-    if (document.hidden && "Notification" in window && Notification.permission === "granted") { const notice = new Notification(title, { body }); notice.onclick = () => { window.focus(); notice.close(); }; }
-  };
   const [callConv, setCallConv] = useState<string | null>(null);
   const [profileId, setProfileId] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("chats");
@@ -46,7 +40,9 @@ export function AppShell() {
     if (!ids.length) return setConvs([]);
     const { data: cs } = await db.from("conversations").select("*").in("id", ids).order("last_message_at", { ascending: false });
     const { data: mem } = await db.from("conversation_members").select("conversation_id, profiles(*)").in("conversation_id", ids);
-    setConvs((cs ?? []).map((c: Conversation) => ({ ...c, members: (mem ?? []).filter((m: { conversation_id: string }) => m.conversation_id === c.id).map((m: { profiles: Profile }) => m.profiles).filter(Boolean) })));
+    const rows: ConvRow[] = (cs ?? []).map((c: Conversation) => ({ ...c, members: (mem ?? []).filter((m: { conversation_id: string }) => m.conversation_id === c.id).map((m: { profiles: Profile }) => m.profiles).filter(Boolean) }));
+    setConvs(rows);
+    setActive(current => current ? rows.find(row => row.id === current.id) ?? current : null);
   }, [me]);
 
   useEffect(() => {
@@ -54,26 +50,7 @@ export function AppShell() {
     const ch = supabase.channel(`shell-${me}-${Math.random().toString(36).slice(2)}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `user_id=eq.${me}` }, loadConvs)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, loadConvs)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
-        const m = p.new as { sender_id: string; conversation_id: string; content: string };
-        loadConvs();
-        if (m.sender_id !== me && (document.hidden || m.conversation_id !== activeRef.current)) {
-          notify('New message', m.content || 'New attachment');
-          if (readPreferences().notifications) toast('New message', { description: m.content || 'New attachment', action: { label: 'Open', onClick: () => { void openConversation(m.conversation_id); } } });
-        }
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "calls" }, (p) => {
-        const c = p.new as { started_by: string; conversation_id: string };
-        if (c.started_by === me) return;
-        notify("Incoming call", "Someone is calling you");
-        if (!readPreferences().notifications) return;
-        toast("📞 Incoming call", { duration: 20000, action: { label: "Join", onClick: () => { openConversation(c.conversation_id); setCallConv(c.conversation_id); } } });
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "announcements" }, (p) => {
-        notify("Announcement", (p.new as { content: string }).content);
-        if (!readPreferences().notifications) return;
-        toast("📢 Announcement", { description: (p.new as { content: string }).content, duration: 15000 });
-      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, loadConvs)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,8 +90,10 @@ export function AppShell() {
     <PresenceProvider><AppContext.Provider value={{ openProfile: setProfileId, openConversation, dmUser, joinCall: (id) => setCallConv(id) }}>
       <div className="flex h-screen overflow-hidden">
         <aside className={`${active ? "hidden md:flex" : "flex"} w-full md:w-80 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground`}>
-          <div className="px-4 pt-4 pb-2">
-            <h1 className="text-xl font-bold leading-tight">Javiers History Project</h1>
+          <div className="px-4 pt-4 pb-2 flex items-start gap-1">
+            <h1 className="text-xl font-bold leading-tight flex-1 min-w-0">Javiers History Project</h1>
+            <Notifications activeId={active?.id ?? null} onOpen={id => { if (id) void openConversation(id); else setTab('news'); }} onSettings={() => setSettings(true)} />
+            <Button variant="ghost" size="icon" className="shrink-0" aria-label="Reload for updates" title="Reload for updates" onClick={() => { if (window.confirm('Reload to get the latest published version? Unsent messages will be lost and active calls will end.')) window.location.reload(); }}><RefreshCw className="size-4" /></Button>
           </div>
           <div className="grid grid-cols-4 gap-1 px-3 pb-2">
             {(["chats", "people", "groups", "news"] as Tab[]).map((t) => (

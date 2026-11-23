@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { db, type Conversation, type Profile } from "@/lib/db";
+import { db, supabase, type Conversation, type Profile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
 import { Avatar } from "./Media";
 import { useApp } from "./AppContext";
@@ -45,7 +45,12 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
     const { data: passwords } = await db.from('password_requests').select('*').eq('status', 'pending').order('created_at');
     setPasswordRequests(passwords ?? []);
   }, []);
-  useEffect(() => { if (open) load(); }, [open, load]);
+  useEffect(() => {
+    if (!open) return;
+    void load();
+    const channel = supabase.channel(`admin-calls-${Math.random().toString(36).slice(2)}`).on('postgres_changes', { event: '*', schema: 'public', table: 'calls' }, () => void load()).subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [open, load]);
 
   const name = (id: string) => users.find((u) => u.id === id)?.display_name ?? "?";
   const upd = async (id: string, fields: Partial<Profile>) => {
@@ -114,7 +119,7 @@ export function AdminPanel({ open, onClose }: { open: boolean; onClose: () => vo
               return (
                 <div key={c.id} className="flex items-center gap-2 rounded-lg border border-border p-2">
                   <p className="flex-1">{cv?.is_group ? cv.name : "DM call"} {cv?.is_private && "🔒"} · since {new Date(c.created_at).toLocaleTimeString()}</p>
-                  <Button size="sm" onClick={() => { onClose(); app.openConversation(c.conversation_id); app.joinCall(c.conversation_id); }}>Join</Button>
+                  <Button size="sm" onClick={() => { onClose(); app.openConversation(c.conversation_id); app.joinCall(c.conversation_id); }}>Join for moderation</Button>
                   <Button size="sm" variant="outline" onClick={async () => { await db.from("calls").update({ ended_at: new Date().toISOString() }).eq("id", c.id); load(); }}>Mark ended</Button>
                 </div>
               );

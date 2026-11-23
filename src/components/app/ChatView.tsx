@@ -2,18 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { db, supabase, uploadFile, kindForFile, type Conversation, type Message, type Profile } from "@/lib/db";
 import { useAuth } from "@/lib/auth";
-import { Avatar, AttachmentView } from "./Media";
+import { Avatar, AttachmentView, useSigned } from "./Media";
+import { ChatAppearance } from './ChatAppearance';
+import { Settings2 } from 'lucide-react';
 import { useApp } from "./AppContext";
 import { UserPicker } from "./UserPicker";
 
 type Vote = { message_id: string; user_id: string; option_index: number };
 
 export function convTitle(c: Conversation, members: Profile[], me: string) {
-  if (c.is_group) return c.name || "Group";
+  if (c.name?.trim()) return c.name;
+  if (c.is_group) return "Group";
   const other = members.find((m) => m.id !== me);
   return other?.display_name ?? "Direct message";
 }
@@ -21,7 +23,12 @@ export function convTitle(c: Conversation, members: Profile[], me: string) {
 export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBack: () => void; onDeleted: () => void }) {
   const { user, isAdmin, profile } = useAuth();
   const app = useApp();
-  const me = user!.id;
+  const me = user?.id ?? '';
+  const [current, setCurrent] = useState(conv);
+  const [showAppearance, setShowAppearance] = useState(false);
+  const cover = useSigned(current.avatar_url);
+  const background = useSigned(current.background_url);
+  useEffect(() => { setCurrent(conv); }, [conv]);
   const [msgs, setMsgs] = useState<Message[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
   const [votes, setVotes] = useState<Vote[]>([]);
@@ -68,6 +75,7 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
         setActiveCall(!!row && !row.ended_at);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "conversation_members", filter: `conversation_id=eq.${conv.id}` }, loadMembers)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'conversations', filter: `id=eq.${conv.id}` }, p => setCurrent(p.new as Conversation))
       .subscribe();
     return () => { live = false; supabase.removeChannel(ch); };
   }, [conv.id, loadMembers]);
@@ -136,18 +144,20 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
     setEditing(null);
   }
 
-  const title = convTitle(conv, members, me);
+  const title = convTitle(current, members, me);
   return (
     <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-border px-4 py-3 bg-panel">
+      {cover && <img src={cover} alt="Chat cover" className="h-24 w-full shrink-0 object-cover" />}
+      <header className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-3 bg-panel">
         <Button variant="ghost" size="sm" className="md:hidden" onClick={onBack}>←</Button>
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-bold">{title}</h2>
           <p className="text-xs text-muted-foreground">
-            {conv.is_group ? `${members.length} members · ${conv.is_private ? "Private" : "Public"}` : "Direct message"}
+            {current.is_group ? `${members.length} members · ${current.is_private ? "Private" : "Public"}` : "Direct message"}
             {!isMember && isAdmin && " · viewing as admin"}
           </p>
         </div>
+        {(isMember || canManage) && <Button variant="ghost" size="icon" aria-label="Chat appearance" title="Chat appearance" onClick={() => setShowAppearance(true)}><Settings2 className="size-4" /></Button>}
         {conv.is_group && <Button variant="outline" size="sm" onClick={() => setShowMembers(true)}>Members</Button>}
         {!conv.is_group && members.find((m) => m.id !== me) && (
           <Button variant="outline" size="sm" onClick={() => app.openProfile(members.find((m) => m.id !== me)!.id)}>Profile</Button>
@@ -159,7 +169,7 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
           🟢 A call is happening now — tap to join
         </button>
       )}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3 bg-cover bg-center" style={background ? { backgroundImage: `url(${background})` } : undefined}>
         {msgs.map((m) => {
           const mine = m.sender_id === me;
           const s = who(m.sender_id);
@@ -228,13 +238,13 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
       )}
 
       <PollDialog open={showPoll} onClose={() => setShowPoll(false)} onCreate={(q, opts) => sendMsg({ kind: "poll", content: q, poll_options: opts })} />
+      <Dialog open={showAppearance} onOpenChange={setShowAppearance}><DialogContent className="max-h-[85vh] overflow-y-auto"><DialogHeader><DialogTitle>Chat appearance</DialogTitle></DialogHeader><ChatAppearance conv={current} member={isMember} onSaved={setCurrent} /></DialogContent></Dialog>
 
       <Dialog open={showMembers} onOpenChange={setShowMembers}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{title}</DialogTitle></DialogHeader>
           {canManage && (
             <div className="space-y-3 rounded-lg border border-border p-3">
-              <GroupSettings conv={conv} />
               <p className="text-sm font-semibold">Add people</p>
               <UserPicker exclude={members.map((m) => m.id)} onPick={async (p) => {
                 const { error } = await db.from("conversation_members").insert({ conversation_id: conv.id, user_id: p.id });
@@ -275,21 +285,6 @@ export function ChatView({ conv, onBack, onDeleted }: { conv: Conversation; onBa
           </div>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-function GroupSettings({ conv }: { conv: Conversation }) {
-  const [name, setName] = useState(conv.name ?? "");
-  const [priv, setPriv] = useState(conv.is_private);
-  return (
-    <div className="space-y-2">
-      <div className="flex gap-2"><Input value={name} onChange={(e) => setName(e.target.value)} />
-        <Button size="sm" onClick={() => db.from("conversations").update({ name }).eq("id", conv.id).then(() => toast.success("Renamed"))}>Rename</Button></div>
-      <label className="flex items-center gap-2 text-sm">
-        <Switch checked={priv} onCheckedChange={async (v) => { setPriv(v); await db.from("conversations").update({ is_private: v }).eq("id", conv.id); }} />
-        Private (only invited people can see and join)
-      </label>
     </div>
   );
 }
